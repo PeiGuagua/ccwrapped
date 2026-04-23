@@ -1,18 +1,68 @@
+<div align="center">
+
 # ccwrapped
 
-> Daily Claude Code report — like Spotify Wrapped, but for your AI coding habits.
+**Your daily Claude Code report. Like Spotify Wrapped, for your AI coding habits.**
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
+![macOS](https://img.shields.io/badge/macOS-supported-black)
 
 ![sample](docs/sample-horizontal.png)
 
-Every night, `ccwrapped` scans your local Claude Code history, writes a short AI narrative about what you actually did, and emails you a dark-themed report card. Zero code or conversation content leaves your machine except the aggregated numbers used to generate the narrative.
+</div>
 
-- **Local-first** — reads `~/.claude/projects/**/*.jsonl` directly, no cloud sync
-- **AI narrative** — any OpenAI-compatible endpoint (Kimi, DeepSeek, OpenAI, OpenRouter…) writes 2–3 sentences about your day
-- **Pretty HTML email** — via Resend (free tier: 3000/month)
-- **Shareable PNGs** — horizontal for Twitter/X, vertical for Stories/小红书/TikTok
-- **Auto-runs nightly** — macOS launchd takes care of the schedule, including catch-up when your Mac was asleep
+---
 
-## Install
+Every night at 23:00 (or whatever time you pick), ccwrapped scans your local Claude Code conversation history, writes a short AI narrative about what you actually did that day, and drops a dark-themed HTML email in your inbox.
+
+Wake up to a pretty card showing:
+
+- How long you were actually active (minute-bucket de-dup, not naive start→end)
+- Which projects you jumped between
+- Which tools you used most (Bash? Edit? WebSearch?)
+- Which files you edited repeatedly
+- What it all costs in theoretical API equivalents
+- A 2–3 sentence Story written by your own AI provider
+
+**Everything runs locally.** Your code, messages, and file contents never leave your machine. Only aggregated numbers are sent to the AI provider (if you enable narrative) and to your own email (if you enable push).
+
+---
+
+## Why ccwrapped?
+
+There are a dozen fantastic tools that dump raw Claude Code usage numbers in a terminal: [ccusage](https://github.com/ryoppippi/ccusage), [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor), [claudelytics](https://github.com/nwiizo/claudelytics), [claude-usage](https://github.com/phuryn/claude-usage). They're great if you want a bank-statement view.
+
+ccwrapped is different: it treats your Claude Code log like Spotify treats your listening history. It **tells a story**, generates a **share-ready PNG**, pushes to your **inbox**, and **runs itself every night**. You don't log in to a dashboard — you just open Gmail tomorrow morning.
+
+|                       | ccusage | Usage Monitor | claude-usage | claudelytics | **ccwrapped** |
+|-----------------------|:-------:|:-------------:|:------------:|:------------:|:-------------:|
+| Token / cost stats    |    ✅    |       ✅       |      ✅       |      ✅       |      ✅       |
+| Real-time TUI         |         |       ✅       |      ✅       |      ✅       |              |
+| AI narrative          |         |               |              |              |    **✅**     |
+| Shareable PNG         |         |               |              |              |    **✅**     |
+| HTML email delivery   |         |               |              |              |    **✅**     |
+| Scheduled auto-run    |         |               |              |              |    **✅**     |
+
+---
+
+## Screenshots
+
+**Horizontal** (1200×675) — good for Twitter/X, blog posts:
+
+![horizontal](docs/sample-horizontal.png)
+
+**Vertical** (1080×1920) — good for Instagram Stories, TikTok, 小红书:
+
+<img src="docs/sample-vertical.png" width="320" alt="vertical">
+
+**HTML email** in your inbox:
+
+> ![email](docs/sample-horizontal.png) *(same visual, rendered as live HTML so colors adapt to your mail client)*
+
+---
+
+## Install (60 seconds)
 
 ```bash
 git clone https://github.com/PeiGuagua/ccwrapped.git
@@ -21,127 +71,160 @@ npm install
 npm run build
 ```
 
-(An `npm publish`-ready package is a goal — track [#1](https://github.com/PeiGuagua/ccwrapped/issues/1) for progress.)
-
-## Quick start
+Test it without any config:
 
 ```bash
-# One-shot today's report
-node dist/cli.js
-
-# Same but no AI narrative (pure template — zero network)
 node dist/cli.js --no-ai
-
-# Email it to yourself (needs config below)
-node dist/cli.js --email
-
-# Generate PNGs to ~/Desktop
-node dist/cli.js --share
 ```
 
-## Config
+You should see today's stats in your terminal.
 
-Create `~/.ccwrapped/config.json`:
+For convenience, link it as a global command:
+
+```bash
+npm link
+# now anywhere:
+ccwrapped
+```
+
+---
+
+## Configure (3 minutes)
+
+Create `~/.ccwrapped/config.json`. Both sections below are optional — you only need what you want.
 
 ```json
 {
   "ai": {
     "base_url": "https://api.moonshot.cn/v1",
-    "api_key": "sk-…",
+    "api_key": "sk-your-key",
     "model": "moonshot-v1-32k"
   },
   "email": {
-    "resend_api_key": "re_…",
+    "resend_api_key": "re_your-key",
     "email_to": "you@example.com",
     "from": "onboarding@resend.dev"
   }
 }
 ```
 
-Both sections are optional:
+### AI provider options
 
-- omit `ai` → narrative falls back to a template
-- omit `email` → `--email` is skipped
+Any OpenAI-compatible endpoint works:
 
-### Supported AI providers
-
-Any OpenAI-compatible endpoint works. Set `base_url` to:
-
-| Provider | `base_url` | Example model |
+| Provider | `base_url` | Suggested `model` |
 |---|---|---|
 | Moonshot (Kimi) | `https://api.moonshot.cn/v1` | `moonshot-v1-32k` |
 | DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| OpenRouter | `https://openrouter.ai/api/v1` | any supported model |
+| OpenRouter | `https://openrouter.ai/api/v1` | any routed model |
 
-## Schedule daily runs
+Skip this block entirely and the Story section uses a local template (no network call).
+
+### Email
+
+Sign up at [resend.com](https://resend.com), grab a free API key (3000 emails/month), and use it. On the free tier you can only send from `onboarding@resend.dev` to the email you signed up with — totally fine for self-emails. For a custom domain, verify it in Resend and use `from: "reports@yourdomain.com"`.
+
+Skip this block and `--email` is a no-op.
+
+---
+
+## Commands
+
+### One-shot
 
 ```bash
-# Install launchd agent (default 23:00)
-node dist/cli.js install-cron
-
-# Or pick a time
-node dist/cli.js install-cron --at 08:00
-
-# Trigger immediately (useful for testing)
-node dist/cli.js trigger-cron
-
-# Status / log
-node dist/cli.js cron-status
-tail -f ~/.ccwrapped/daily.log
-
-# Remove
-node dist/cli.js uninstall-cron
+ccwrapped                    # today's report in terminal
+ccwrapped --yesterday        # yesterday's
+ccwrapped --date 2026-04-01  # any date
+ccwrapped --no-ai            # skip AI call, use template
+ccwrapped --share            # also save two PNGs to ~/Desktop
+ccwrapped --email            # also send the HTML email
+ccwrapped --json             # raw stats as JSON
 ```
 
-Missed the scheduled time because your Mac was asleep? `launchd` catches up on the next wake.
+### Schedule (macOS only, for now)
 
-## Screenshots
+```bash
+ccwrapped install-cron              # daily at 23:00
+ccwrapped install-cron --at 08:00   # or any HH:MM
+ccwrapped trigger-cron              # run it now (test)
+ccwrapped cron-status               # is it loaded?
+ccwrapped uninstall-cron            # remove the schedule
+tail -f ~/.ccwrapped/daily.log      # watch what launchd did
+```
 
-Horizontal (`ccwrapped-YYYY-MM-DD.png`, 1200×675 — Twitter/X, blog headers):
+By default the scheduled job runs `ccwrapped --email`. If you want PNGs on Desktop too, edit `~/Library/LaunchAgents/com.ccwrapped.daily.plist` and add `--share` to `ProgramArguments`, then `uninstall-cron && install-cron`.
 
-![horizontal](docs/sample-horizontal.png)
+### Missed a day?
 
-Vertical (`ccwrapped-YYYY-MM-DD-story.png`, 1080×1920 — Instagram Stories, TikTok, 小红书):
+`launchd` tracks missed runs. If your Mac was asleep or off at 23:00, the job fires as soon as you wake the machine. If the Mac was off for multiple days, only the latest missed run is fired on wake (a feature, not a bug).
 
-<img src="docs/sample-vertical.png" width="360" alt="vertical">
+---
 
 ## How it works
 
 ```
-~/.claude/projects/**/*.jsonl
-        │ stream-parse (local, no network)
-        ▼
-    aggregate per-day stats
+~/.claude/projects/**/*.jsonl           (local, written by Claude Code)
         │
-        ├─ terminal output  (default)
-        ├─ HTML email       (--email  → Resend)
-        ├─ PNG × 2          (--share  → Desktop)
-        └─ AI narrative     (one call with aggregated numbers only)
+        │  stream-parse (no network)
+        ▼
+   per-day aggregation
+        │
+        ├─── terminal output   (default)
+        ├─── HTML email        (--email  → Resend API)
+        ├─── PNG × 2           (--share  → ~/Desktop)
+        └─── AI narrative      (single request with aggregated numbers)
 ```
 
-What leaves your machine:
+What leaves your machine, and when:
 
-- **Nothing** if you pass `--no-ai` and don't use `--email`.
-- Aggregated stats (no code, no messages) → your chosen AI provider, if AI narrative is enabled.
-- Rendered HTML + narrative → Resend, if `--email` is enabled.
+| Action | What's sent | Where |
+|---|---|---|
+| `ccwrapped` (default) | AI: aggregated numbers only | your configured AI provider |
+| `ccwrapped --no-ai` | nothing | — |
+| `ccwrapped --share` | nothing | PNGs saved to `~/Desktop` |
+| `ccwrapped --email` | rendered HTML + narrative | Resend → your inbox |
 
-File contents, conversation text, and command arguments are **never** sent to any third party.
+Your actual file contents, code, conversation text, prompts, and command arguments are **never** transmitted.
 
-## Privacy & safety
+---
 
-- API keys live in `~/.ccwrapped/config.json` (chmod 600 by default on macOS).
-- The launchd plist runs only your local installed binary; it does not auto-update.
-- Cost estimates use public API rates — if you pay a flat Claude Max subscription, the "cost" figure is a theoretical API equivalent, not your actual spend.
+## Privacy
+
+- `~/.ccwrapped/config.json` stores API keys. On first write, it's `chmod 600` (owner-read-only).
+- No telemetry. No analytics. No phone-home. Ever.
+- Font files bundled in `templates/` are [Inter](https://rsms.me/inter/) (SIL Open Font License).
+
+---
 
 ## Roadmap
 
-- [ ] Weekly / monthly wrap
-- [ ] Year-in-review auto-generated at year end
-- [ ] Windows + Linux cron
-- [ ] Web dashboard (optional, self-hosted)
-- [ ] `npx ccwrapped` one-liner install
+- [ ] `npm publish` — one-liner `npx ccwrapped`
+- [ ] Weekly & monthly wrap
+- [ ] Year-in-review (auto-assemble on Dec 31)
+- [ ] Windows (Task Scheduler) + Linux (systemd timer)
+- [ ] Configurable PNG theme
+- [ ] Embed PNG inline in email body
+- [ ] Period comparisons (today vs yesterday, week-over-week)
+- [ ] Optional "stuck detection" ("cli.ts is your top file 5 days in a row — want to pause?")
+
+---
+
+## Contributing
+
+Issues and PRs welcome. If ccwrapped gave you a chuckle or a pretty screenshot, **please drop a ⭐** — it helps others find it.
+
+Built on top of wonderful OSS:
+
+- [satori](https://github.com/vercel/satori) — JSX to SVG
+- [@resvg/resvg-js](https://github.com/yisibl/resvg-js) — SVG to PNG
+- [resend](https://resend.com) — email delivery
+- [commander](https://github.com/tj/commander.js) — CLI framework
+- [kleur](https://github.com/lukeed/kleur) — terminal colors
+
+---
 
 ## License
 
-MIT © 2026
+MIT © 2026 — [@PeiGuagua](https://github.com/PeiGuagua)
