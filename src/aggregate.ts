@@ -11,15 +11,26 @@ function displayProjectName(cwd: string): string {
 
 type Pricing = { input: number; output: number; cacheRead: number; cacheWrite: number };
 
-// Approximate USD per 1M tokens. Adjust as Anthropic updates pricing.
+// USD per 1M tokens. Source: https://platform.claude.com/docs/en/about-claude/pricing
+// Cache write = 5-minute duration (1.25x input). Cache read = 0.1x input.
+// Last verified: 2026-04-24
 const PRICING: Record<string, Pricing> = {
-  'claude-opus-4-7': { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
-  'claude-opus-4-6': { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+  // Opus 4.5+ — new pricing tier ($5/$25), applies to 4.5, 4.6, 4.7
+  'claude-opus-4-7': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  'claude-opus-4-6': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  'claude-opus-4-5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  // Older Opus 4.x — legacy $15/$75 tier
+  'claude-opus-4-1': { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
   'claude-opus-4': { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+  // Sonnet 4.x — unchanged $3/$15
   'claude-sonnet-4-6': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  'claude-sonnet-4-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
   'claude-sonnet-4': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  'claude-haiku-4-5': { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
-  'claude-haiku-4-5-20251001': { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
+  // Haiku 4.5 — $1/$5
+  'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+  'claude-haiku-4-5-20251001': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+  // Haiku 3.5 — legacy
+  'claude-haiku-3-5': { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
 };
 
 export function aggregate(events: RawEvent[], date: Date): DailyStats {
