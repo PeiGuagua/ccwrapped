@@ -18,6 +18,7 @@ export type EmailConfig = {
 };
 
 export type Config = {
+  language?: 'en' | 'zh';
   ai?: AIConfig;
   email?: EmailConfig;
 };

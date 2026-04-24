@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import type { DailyStats } from './types.js';
 import { loadConfig } from './config.js';
 import { renderEmail } from './render/email.js';
+import type { Lang } from './i18n.js';
 
 export type SendResult =
   | { ok: true; id: string }
@@ -9,7 +10,8 @@ export type SendResult =
 
 export async function sendEmail(
   stats: DailyStats,
-  narrative: string
+  narrative: string,
+  lang: Lang = 'en'
 ): Promise<SendResult> {
   const cfg = await loadConfig();
   const e = cfg.email;
@@ -17,7 +19,7 @@ export async function sendEmail(
     return { ok: false, error: 'email not configured (missing resend_api_key or email_to)' };
   }
 
-  const { subject, html, text } = renderEmail(stats, narrative);
+  const { subject, html, text } = renderEmail(stats, narrative, lang);
   const resend = new Resend(e.resend_api_key);
   const from = e.from ?? 'onboarding@resend.dev';
 

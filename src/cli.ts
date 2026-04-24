@@ -5,10 +5,11 @@ import { collectEvents } from './collect.js';
 import { aggregate } from './aggregate.js';
 import { narrate } from './narrate.js';
 import { renderTerminal } from './render/terminal.js';
-import { configPath } from './config.js';
+import { configPath, loadConfig } from './config.js';
 import { sendEmail } from './email.js';
 import { installCron, uninstallCron, cronStatus, triggerNow, logPath } from './cron.js';
 import { renderImageToFile } from './render/image.js';
+import { resolveLang, t, type Lang } from './i18n.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -26,6 +27,7 @@ program
   .option('--no-ai', 'skip AI narrative, use template only')
   .option('--email', 'also send report via email (requires email config)')
   .option('--share', 'also generate PNG share images to ~/Desktop')
+  .option('--lang <en|zh>', 'output language (default: from config or OS locale)')
   .action(
     async (opts: {
       date?: string;
@@ -34,12 +36,19 @@ program
       ai?: boolean;
       email?: boolean;
       share?: boolean;
+      lang?: string;
     }) => {
+      const cfg = await loadConfig();
+      const lang: Lang = opts.lang === 'en' || opts.lang === 'zh'
+        ? opts.lang
+        : resolveLang(cfg.language);
+      const s = t(lang);
+
       const target = resolveDate(opts);
       const { start, end } = dayBounds(target);
 
       if (!opts.json) {
-        process.stderr.write(kleur.dim(`Scanning ~/.claude for ${formatYMD(target)}…\n`));
+        process.stderr.write(kleur.dim(s.fmtScanNotice(formatYMD(target)) + '\n'));
       }
 
       const t0 = Date.now();
@@ -53,24 +62,25 @@ program
 
       const { text: narrative, source } = await narrate(stats, {
         useAI: opts.ai !== false,
+        lang,
       });
       const elapsed = Date.now() - t0;
 
       process.stdout.write(
-        renderTerminal(stats, { narrative, narrativeSource: source }) + '\n'
+        renderTerminal(stats, { narrative, narrativeSource: source, lang }) + '\n'
       );
-      process.stderr.write(
-        kleur.dim(`  scanned ${events.length} events in ${elapsed}ms\n\n`)
-      );
+      process.stderr.write(kleur.dim(s.fmtScanResult(events.length, elapsed) + '\n\n'));
 
       if (opts.share) {
-        process.stderr.write(kleur.dim('Rendering PNG share images...\n'));
+        process.stderr.write(
+          kleur.dim(lang === 'zh' ? '生成分享图...\n' : 'Rendering PNG share images...\n')
+        );
         const desktop = join(homedir(), 'Desktop');
         const hPath = join(desktop, `ccwrapped-${stats.date}.png`);
         const vPath = join(desktop, `ccwrapped-${stats.date}-story.png`);
         try {
-          await renderImageToFile(stats, hPath, { format: 'horizontal' });
-          await renderImageToFile(stats, vPath, { format: 'vertical' });
+          await renderImageToFile(stats, hPath, { format: 'horizontal', lang });
+          await renderImageToFile(stats, vPath, { format: 'vertical', lang });
           process.stderr.write(kleur.green(`  ✓ ${hPath}\n`));
           process.stderr.write(kleur.green(`  ✓ ${vPath}\n`));
         } catch (err) {
@@ -82,12 +92,22 @@ program
       }
 
       if (opts.email) {
-        process.stderr.write(kleur.dim('Sending email...\n'));
-        const result = await sendEmail(stats, narrative);
+        process.stderr.write(
+          kleur.dim(lang === 'zh' ? '发送邮件...\n' : 'Sending email...\n')
+        );
+        const result = await sendEmail(stats, narrative, lang);
         if (result.ok) {
-          process.stderr.write(kleur.green(`  ✓ email sent (id ${result.id})\n`));
+          process.stderr.write(
+            kleur.green(
+              (lang === 'zh' ? '  ✓ 邮件已发送 (id ' : '  ✓ email sent (id ') + result.id + ')\n'
+            )
+          );
         } else {
-          process.stderr.write(kleur.red(`  ✗ email failed: ${result.error}\n`));
+          process.stderr.write(
+            kleur.red(
+              (lang === 'zh' ? '  ✗ 邮件失败: ' : '  ✗ email failed: ') + result.error + '\n'
+            )
+          );
           process.exitCode = 1;
         }
       }

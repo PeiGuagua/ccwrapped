@@ -1,66 +1,69 @@
 import kleur from 'kleur';
 import type { DailyStats } from '../types.js';
+import { t, type Lang } from '../i18n.js';
 
 const WIDTH = 52;
 
 export type RenderOptions = {
   narrative?: string;
   narrativeSource?: 'ai' | 'template' | 'empty';
+  lang?: Lang;
 };
 
 export function renderTerminal(stats: DailyStats, opts: RenderOptions = {}): string {
+  const lang = opts.lang ?? 'en';
+  const s = t(lang);
   const lines: string[] = [];
   const sep = kleur.dim('─'.repeat(WIDTH));
 
   lines.push(sep);
-  lines.push(' ' + kleur.bold(kleur.yellow('ccwrapped')) + kleur.dim(`  ·  ${formatDate(stats.date)}`));
+  lines.push(' ' + kleur.bold(kleur.yellow(s.brand.toLowerCase())) + kleur.dim(`  ·  ${s.fmtDate(stats.date)}`));
   lines.push(sep);
   lines.push('');
 
   if (stats.totalEvents === 0) {
-    lines.push(kleur.dim('  No Claude Code activity on this date.'));
+    lines.push(kleur.dim('  ' + s.emptyDay));
     lines.push('');
     lines.push(sep);
     return lines.join('\n');
   }
 
-  const activeH = Math.floor(stats.activeMinutes / 60);
-  const activeM = stats.activeMinutes % 60;
-  const activeStr = activeH > 0 ? `${activeH}h ${activeM}min` : `${activeM}min`;
+  const activeStr = s.fmtDuration(stats.activeMinutes);
+  const pad = (label: string) => label + ':';
 
-  lines.push(`  ${kleur.bold('Active:')}    ${kleur.bold(kleur.yellow(activeStr))}`);
+  lines.push(`  ${kleur.bold(pad(s.active))}    ${kleur.bold(kleur.yellow(activeStr))}`);
   const totalMsg = stats.assistantMessages + stats.userMessages;
   lines.push(
-    `  ${kleur.bold('Messages:')}  ${totalMsg}` +
-      kleur.dim(`  (${stats.assistantMessages} assistant · ${stats.userMessages} user)`)
+    `  ${kleur.bold(pad(s.messages))}  ${totalMsg}  ` +
+      kleur.dim(s.fmtBreakdown(stats.assistantMessages, stats.userMessages))
   );
-  const totalTools = Object.values(stats.toolCounts).reduce((s, n) => s + n, 0);
-  lines.push(`  ${kleur.bold('Tools:')}     ${totalTools}`);
+  const totalTools = Object.values(stats.toolCounts).reduce((acc, n) => acc + n, 0);
+  lines.push(`  ${kleur.bold(pad(s.tools))}     ${totalTools}`);
   lines.push(
-    `  ${kleur.bold('Sessions:')}  ${stats.sessionCount}` +
-      kleur.dim(`  (longest ${stats.longestSessionMinutes}min)`)
+    `  ${kleur.bold(pad(s.sessions))}  ${stats.sessionCount}  ` +
+      kleur.dim(`(${s.fmtLongestSuffix(stats.longestSessionMinutes)})`)
   );
-  lines.push(`  ${kleur.bold('Cost:')}      ${kleur.yellow('~$' + stats.estimatedCostUSD.toFixed(2))}`);
+  lines.push(`  ${kleur.bold(pad(s.cost))}      ${kleur.yellow('~$' + stats.estimatedCostUSD.toFixed(2))}`);
   lines.push('');
 
   if (stats.projectBreakdown.length > 0) {
-    lines.push('  ' + kleur.bold('Projects'));
+    lines.push('  ' + kleur.bold(s.topProject));
     for (const p of stats.projectBreakdown.slice(0, 3)) {
       const barStr = bar(p.percentOfDay, 16);
       lines.push(
-        `  ${barStr} ${kleur.cyan(p.name.padEnd(16))} ${kleur.dim(p.percentOfDay.toFixed(0).padStart(2) + '%')}`
+        `  ${barStr} ${kleur.cyan(padRight(p.name, 16))} ${kleur.dim(p.percentOfDay.toFixed(0).padStart(2) + '%')}`
       );
     }
     lines.push('');
   }
 
   const totalModelTokens = Object.values(stats.modelTokens).reduce(
-    (s, u) =>
-      s + u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens,
+    (acc, u) =>
+      acc + u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens,
     0
   );
   if (totalModelTokens > 0) {
-    lines.push('  ' + kleur.bold('Models'));
+    lines.push('  ' + kleur.bold(s.models));
     const entries = Object.entries(stats.modelTokens)
       .map(([model, u]) => {
         const total =
@@ -70,7 +73,7 @@ export function renderTerminal(stats: DailyStats, opts: RenderOptions = {}): str
       .sort((a, b) => b.total - a.total);
     for (const e of entries) {
       lines.push(
-        `  ${bar(e.pct, 16)} ${kleur.dim(shortModel(e.model).padEnd(16))} ${kleur.dim(
+        `  ${bar(e.pct, 16)} ${kleur.dim(padRight(shortModel(e.model), 16))} ${kleur.dim(
           e.pct.toFixed(0).padStart(2) + '%'
         )}`
       );
@@ -81,12 +84,12 @@ export function renderTerminal(stats: DailyStats, opts: RenderOptions = {}): str
   const toolEntries = Object.entries(stats.toolCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
   if (toolEntries.length > 0) {
     const maxVal = toolEntries[0][1];
-    lines.push('  ' + kleur.bold('Top tools'));
+    lines.push('  ' + kleur.bold(s.topTools));
     for (const [name, count] of toolEntries) {
       const barLen = Math.max(1, Math.round((count / maxVal) * 16));
       lines.push(
         `  ${kleur.yellow('█'.repeat(barLen))}${kleur.dim('░'.repeat(16 - barLen))} ${kleur.dim(
-          name.padEnd(10)
+          padRight(name, 10)
         )} ${count}`
       );
     }
@@ -95,14 +98,14 @@ export function renderTerminal(stats: DailyStats, opts: RenderOptions = {}): str
 
   const nightOwl = computeNightOwl(stats.hourCounts);
   lines.push(
-    `  ${kleur.bold('Peak hour:')} ${String(stats.peakHour).padStart(2, '0')}:00` +
+    `  ${kleur.bold(pad(s.peakHour))} ${String(stats.peakHour).padStart(2, '0')}:00` +
       kleur.dim('   ·   ') +
-      `${kleur.bold('Night owl:')} ${nightOwl}%`
+      `${kleur.bold(pad(s.nightOwl))} ${nightOwl}%`
   );
   lines.push('');
 
   if (stats.topFilesEdited.length > 0) {
-    lines.push('  ' + kleur.bold('Most edited'));
+    lines.push('  ' + kleur.bold(s.mostEdited));
     for (const f of stats.topFilesEdited.slice(0, 3)) {
       lines.push(`  ${kleur.dim('·')} ${kleur.cyan(shortPath(f.path))} ${kleur.dim('×' + f.count)}`);
     }
@@ -116,7 +119,7 @@ export function renderTerminal(stats: DailyStats, opts: RenderOptions = {}): str
         : opts.narrativeSource === 'template'
           ? kleur.dim('(template)')
           : kleur.dim('(empty)');
-    lines.push('  ' + kleur.bold('Story') + '  ' + tag);
+    lines.push('  ' + kleur.bold(s.story) + '  ' + tag);
     for (const line of wrap(opts.narrative, WIDTH - 4)) {
       lines.push('  ' + kleur.italic(line));
     }
@@ -125,37 +128,6 @@ export function renderTerminal(stats: DailyStats, opts: RenderOptions = {}): str
 
   lines.push(sep);
   return lines.join('\n');
-}
-
-function wrap(text: string, width: number): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const ch of text) {
-    const w = isWide(ch) ? 2 : 1;
-    if (widthOf(line) + w > width && line.length > 0) {
-      out.push(line);
-      line = '';
-    }
-    line += ch;
-  }
-  if (line.length > 0) out.push(line);
-  return out;
-}
-
-function widthOf(s: string): number {
-  let w = 0;
-  for (const ch of s) w += isWide(ch) ? 2 : 1;
-  return w;
-}
-
-function isWide(ch: string): boolean {
-  const code = ch.codePointAt(0) ?? 0;
-  // CJK ideographs and fullwidth punctuation — good-enough heuristic
-  return (
-    (code >= 0x4e00 && code <= 0x9fff) ||
-    (code >= 0x3000 && code <= 0x303f) ||
-    (code >= 0xff00 && code <= 0xffef)
-  );
 }
 
 function bar(pct: number, width: number): string {
@@ -183,7 +155,7 @@ function shortPath(path: string): string {
 }
 
 function computeNightOwl(hourCounts: number[]): number {
-  const total = hourCounts.reduce((s, c) => s + c, 0);
+  const total = hourCounts.reduce((acc, c) => acc + c, 0);
   if (total === 0) return 0;
   let night = 0;
   for (let h = 0; h < 24; h++) {
@@ -192,7 +164,38 @@ function computeNightOwl(hourCounts: number[]): number {
   return Math.round((night / total) * 100);
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+function wrap(text: string, width: number): string[] {
+  const out: string[] = [];
+  let line = '';
+  for (const ch of text) {
+    const w = isWide(ch) ? 2 : 1;
+    if (widthOf(line) + w > width && line.length > 0) {
+      out.push(line);
+      line = '';
+    }
+    line += ch;
+  }
+  if (line.length > 0) out.push(line);
+  return out;
+}
+
+function widthOf(s: string): number {
+  let w = 0;
+  for (const ch of s) w += isWide(ch) ? 2 : 1;
+  return w;
+}
+
+function isWide(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return (
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0x3000 && code <= 0x303f) ||
+    (code >= 0xff00 && code <= 0xffef)
+  );
+}
+
+function padRight(s: string, width: number): string {
+  const w = widthOf(s);
+  if (w >= width) return s;
+  return s + ' '.repeat(width - w);
 }

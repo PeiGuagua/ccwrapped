@@ -1,19 +1,38 @@
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
 import type { DailyStats } from '../types.js';
+import { t, type Lang } from '../i18n.js';
 
 type Node = {
   type: string;
   props: { style?: Record<string, unknown>; children?: unknown };
 };
 
-let fontCache: { regular: Buffer; bold: Buffer } | null = null;
+type FontEntry = {
+  name: string;
+  data: Buffer;
+  weight: 400 | 700;
+  style: 'normal';
+};
 
-async function loadFonts(): Promise<{ regular: Buffer; bold: Buffer }> {
-  if (fontCache) return fontCache;
+let cachedInterFonts: { regular: Buffer; bold: Buffer } | null = null;
+let cachedCJKFonts: { regular: Buffer; bold: Buffer } | null = null;
+
+const CJK_FONT_CACHE_DIR = join(homedir(), '.ccwrapped', 'fonts');
+const CJK_FONT_URLS = {
+  regular:
+    'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-sc@latest/chinese-simplified-400-normal.ttf',
+  bold:
+    'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-sc@latest/chinese-simplified-700-normal.ttf',
+};
+
+async function loadInterFonts(): Promise<{ regular: Buffer; bold: Buffer }> {
+  if (cachedInterFonts) return cachedInterFonts;
   const here = dirname(fileURLToPath(import.meta.url));
   const pkgRoot = resolve(here, '..', '..');
   const templates = join(pkgRoot, 'templates');
@@ -21,31 +40,64 @@ async function loadFonts(): Promise<{ regular: Buffer; bold: Buffer }> {
     readFile(join(templates, 'Inter-Regular.ttf')),
     readFile(join(templates, 'Inter-Bold.ttf')),
   ]);
-  fontCache = { regular, bold };
-  return fontCache;
+  cachedInterFonts = { regular, bold };
+  return cachedInterFonts;
+}
+
+async function loadCJKFonts(): Promise<{ regular: Buffer; bold: Buffer }> {
+  if (cachedCJKFonts) return cachedCJKFonts;
+  await mkdir(CJK_FONT_CACHE_DIR, { recursive: true });
+  const regPath = join(CJK_FONT_CACHE_DIR, 'NotoSansSC-Regular.ttf');
+  const boldPath = join(CJK_FONT_CACHE_DIR, 'NotoSansSC-Bold.ttf');
+  if (!existsSync(regPath)) await downloadFont(CJK_FONT_URLS.regular, regPath);
+  if (!existsSync(boldPath)) await downloadFont(CJK_FONT_URLS.bold, boldPath);
+  const [regular, bold] = await Promise.all([readFile(regPath), readFile(boldPath)]);
+  cachedCJKFonts = { regular, bold };
+  return cachedCJKFonts;
+}
+
+async function downloadFont(url: string, dest: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`font download failed: ${res.status} ${url}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  await writeFile(dest, buf);
+}
+
+async function loadFonts(lang: Lang): Promise<FontEntry[]> {
+  const inter = await loadInterFonts();
+  const fonts: FontEntry[] = [
+    { name: 'Inter', data: inter.regular, weight: 400, style: 'normal' },
+    { name: 'Inter', data: inter.bold, weight: 700, style: 'normal' },
+  ];
+  if (lang === 'zh') {
+    const cjk = await loadCJKFonts();
+    fonts.push(
+      { name: 'Noto Sans SC', data: cjk.regular, weight: 400, style: 'normal' },
+      { name: 'Noto Sans SC', data: cjk.bold, weight: 700, style: 'normal' }
+    );
+  }
+  return fonts;
 }
 
 export type RenderImageOptions = {
   format: 'horizontal' | 'vertical';
+  lang?: Lang;
 };
 
 export async function renderImage(
   stats: DailyStats,
   opts: RenderImageOptions
 ): Promise<Buffer> {
-  const fonts = await loadFonts();
+  const lang = opts.lang ?? 'en';
+  const fonts = await loadFonts(lang);
   const { width, height, tree } =
-    opts.format === 'horizontal' ? buildHorizontal(stats) : buildVertical(stats);
+    opts.format === 'horizontal' ? buildHorizontal(stats, lang) : buildVertical(stats, lang);
 
   const svg = await satori(tree as unknown as Parameters<typeof satori>[0], {
     width,
     height,
-    fonts: [
-      { name: 'Inter', data: fonts.regular, weight: 400, style: 'normal' },
-      { name: 'Inter', data: fonts.bold, weight: 700, style: 'normal' },
-    ],
+    fonts,
   });
-
   const png = new Resvg(svg, { fitTo: { mode: 'width', value: width } })
     .render()
     .asPng();
@@ -61,16 +113,18 @@ export async function renderImageToFile(
   await writeFile(outPath, buf);
 }
 
-function buildHorizontal(stats: DailyStats): { width: number; height: number; tree: Node } {
-  const activeH = Math.floor(stats.activeMinutes / 60);
-  const activeM = stats.activeMinutes % 60;
-  const activeStr = activeH > 0 ? `${activeH}h ${activeM}min` : `${activeM}min`;
-  const totalTools = Object.values(stats.toolCounts).reduce((s, n) => s + n, 0);
+function buildHorizontal(
+  stats: DailyStats,
+  lang: Lang
+): { width: number; height: number; tree: Node } {
+  const s = t(lang);
+  const activeStr = s.fmtDuration(stats.activeMinutes);
+  const totalTools = Object.values(stats.toolCounts).reduce((acc, n) => acc + n, 0);
   const topProject = stats.projectBreakdown[0];
 
   const modelTotal = Object.values(stats.modelTokens).reduce(
-    (s, u) =>
-      s + u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens,
+    (acc, u) =>
+      acc + u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens,
     0
   );
   const models = Object.entries(stats.modelTokens)
@@ -104,24 +158,24 @@ function buildHorizontal(stats: DailyStats): { width: number; height: number; tr
         flexDirection: 'column',
         background: 'linear-gradient(135deg, #0f0f10 0%, #1a0f0a 100%)',
         color: '#fff',
-        fontFamily: 'Inter',
+        fontFamily: 'Inter, Noto Sans SC',
         padding: '48px 56px',
       },
       children: [
-        headerRow(stats.date),
+        headerRow(s.brand, s.fmtDate(stats.date)),
         spacer(28),
-        heroNumber(activeStr, 'active in Claude Code'),
+        heroNumber(activeStr, s.activeSubtitle),
         spacer(32),
         statsGrid([
-          { label: 'messages', value: String(stats.assistantMessages + stats.userMessages) },
-          { label: 'tools', value: String(totalTools) },
-          { label: 'sessions', value: String(stats.sessionCount) },
-          { label: 'cost', value: `~$${stats.estimatedCostUSD.toFixed(0)}` },
+          { label: s.messages, value: String(stats.assistantMessages + stats.userMessages) },
+          { label: s.tools, value: String(totalTools) },
+          { label: s.sessions, value: String(stats.sessionCount) },
+          { label: s.cost, value: `~$${stats.estimatedCostUSD.toFixed(0)}` },
         ]),
         spacer(28),
-        bottomRow(topProject, models, topTools),
+        bottomRow(topProject, models, topTools, s),
         flexSpacer(),
-        footer(),
+        footer(s.footer),
       ],
     },
   };
@@ -129,16 +183,18 @@ function buildHorizontal(stats: DailyStats): { width: number; height: number; tr
   return { width, height, tree };
 }
 
-function buildVertical(stats: DailyStats): { width: number; height: number; tree: Node } {
-  const activeH = Math.floor(stats.activeMinutes / 60);
-  const activeM = stats.activeMinutes % 60;
-  const activeStr = activeH > 0 ? `${activeH}h ${activeM}min` : `${activeM}min`;
-  const totalTools = Object.values(stats.toolCounts).reduce((s, n) => s + n, 0);
+function buildVertical(
+  stats: DailyStats,
+  lang: Lang
+): { width: number; height: number; tree: Node } {
+  const s = t(lang);
+  const activeStr = s.fmtDuration(stats.activeMinutes);
+  const totalTools = Object.values(stats.toolCounts).reduce((acc, n) => acc + n, 0);
   const topProject = stats.projectBreakdown[0];
 
   const modelTotal = Object.values(stats.modelTokens).reduce(
-    (s, u) =>
-      s + u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens,
+    (acc, u) =>
+      acc + u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens,
     0
   );
   const models = Object.entries(stats.modelTokens)
@@ -172,27 +228,27 @@ function buildVertical(stats: DailyStats): { width: number; height: number; tree
         flexDirection: 'column',
         background: 'linear-gradient(180deg, #0f0f10 0%, #1a0f0a 100%)',
         color: '#fff',
-        fontFamily: 'Inter',
+        fontFamily: 'Inter, Noto Sans SC',
         padding: '96px 72px',
       },
       children: [
-        headerRow(stats.date),
+        headerRow(s.brand, s.fmtDate(stats.date)),
         spacer(64),
-        heroNumber(activeStr, 'active in Claude Code', 180),
+        heroNumber(activeStr, s.activeSubtitle, 180),
         spacer(80),
         statsGrid(
           [
-            { label: 'messages', value: String(stats.assistantMessages + stats.userMessages) },
-            { label: 'tools', value: String(totalTools) },
-            { label: 'sessions', value: String(stats.sessionCount) },
-            { label: 'cost', value: `~$${stats.estimatedCostUSD.toFixed(0)}` },
+            { label: s.messages, value: String(stats.assistantMessages + stats.userMessages) },
+            { label: s.tools, value: String(totalTools) },
+            { label: s.sessions, value: String(stats.sessionCount) },
+            { label: s.cost, value: `~$${stats.estimatedCostUSD.toFixed(0)}` },
           ],
           { large: true }
         ),
         spacer(64),
-        verticalBottom(topProject, models, topTools),
+        verticalBottom(topProject, models, topTools, s),
         flexSpacer(),
-        footer(true),
+        footer(s.footer, true),
       ],
     },
   };
@@ -200,7 +256,7 @@ function buildVertical(stats: DailyStats): { width: number; height: number; tree
   return { width, height, tree };
 }
 
-function headerRow(date: string): Node {
+function headerRow(brand: string, date: string): Node {
   return {
     type: 'div',
     props: {
@@ -211,20 +267,8 @@ function headerRow(date: string): Node {
         fontSize: 18,
       },
       children: [
-        {
-          type: 'div',
-          props: {
-            style: { color: '#f59e0b', fontWeight: 700, letterSpacing: 2 },
-            children: 'CCWRAPPED',
-          },
-        },
-        {
-          type: 'div',
-          props: {
-            style: { color: '#888' },
-            children: formatDate(date),
-          },
-        },
+        { type: 'div', props: { style: { color: '#f59e0b', fontWeight: 700, letterSpacing: 2 }, children: brand } },
+        { type: 'div', props: { style: { color: '#888' }, children: date } },
       ],
     },
   };
@@ -239,23 +283,11 @@ function heroNumber(value: string, subtitle: string, size = 160): Node {
         {
           type: 'div',
           props: {
-            style: {
-              fontSize: size,
-              fontWeight: 700,
-              letterSpacing: -4,
-              lineHeight: 1,
-              color: '#fff',
-            },
+            style: { fontSize: size, fontWeight: 700, letterSpacing: -4, lineHeight: 1, color: '#fff' },
             children: value,
           },
         },
-        {
-          type: 'div',
-          props: {
-            style: { fontSize: 22, color: '#aaa' },
-            children: subtitle,
-          },
-        },
+        { type: 'div', props: { style: { fontSize: 22, color: '#aaa' }, children: subtitle } },
       ],
     },
   };
@@ -300,12 +332,7 @@ function statsGrid(
             {
               type: 'div',
               props: {
-                style: {
-                  fontSize: labelSize,
-                  color: '#888',
-                  textTransform: 'uppercase',
-                  letterSpacing: 1,
-                },
+                style: { fontSize: labelSize, color: '#888', letterSpacing: 1 },
                 children: it.label,
               },
             },
@@ -319,17 +346,14 @@ function statsGrid(
 function bottomRow(
   topProject: { name: string; percentOfDay: number } | undefined,
   models: Array<{ name: string; pct: number }>,
-  topTools: Array<{ name: string; count: number }>
+  topTools: Array<{ name: string; count: number }>,
+  s: ReturnType<typeof t>
 ): Node {
   return {
     type: 'div',
     props: {
       style: { display: 'flex', gap: 32 },
-      children: [
-        projectCard(topProject),
-        modelsCard(models),
-        toolsCard(topTools),
-      ],
+      children: [projectCard(topProject, s), modelsCard(models, s), toolsCard(topTools, s)],
     },
   };
 }
@@ -337,16 +361,17 @@ function bottomRow(
 function verticalBottom(
   topProject: { name: string; percentOfDay: number } | undefined,
   models: Array<{ name: string; pct: number }>,
-  topTools: Array<{ name: string; count: number }>
+  topTools: Array<{ name: string; count: number }>,
+  s: ReturnType<typeof t>
 ): Node {
   return {
     type: 'div',
     props: {
       style: { display: 'flex', flexDirection: 'column', gap: 40 },
       children: [
-        projectCard(topProject, { large: true }),
-        modelsCard(models, { large: true }),
-        toolsCard(topTools, { large: true }),
+        projectCard(topProject, s, { large: true }),
+        modelsCard(models, s, { large: true }),
+        toolsCard(topTools, s, { large: true }),
       ],
     },
   };
@@ -354,6 +379,7 @@ function verticalBottom(
 
 function projectCard(
   top: { name: string; percentOfDay: number } | undefined,
+  s: ReturnType<typeof t>,
   opts: { large?: boolean } = {}
 ): Node {
   const style: Record<string, unknown> = {
@@ -368,7 +394,7 @@ function projectCard(
     props: {
       style,
       children: [
-        sectionLabel('top project', opts.large),
+        sectionLabel(s.topProject, opts.large),
         top
           ? {
               type: 'div',
@@ -392,13 +418,7 @@ function projectCard(
                 ],
               },
             }
-          : {
-              type: 'div',
-              props: {
-                style: { fontSize: opts.large ? 40 : 22, color: '#666' },
-                children: '—',
-              },
-            },
+          : { type: 'div', props: { style: { fontSize: opts.large ? 40 : 22, color: '#666' }, children: '—' } },
       ],
     },
   };
@@ -406,6 +426,7 @@ function projectCard(
 
 function modelsCard(
   models: Array<{ name: string; pct: number }>,
+  s: ReturnType<typeof t>,
   opts: { large?: boolean } = {}
 ): Node {
   const style: Record<string, unknown> = {
@@ -420,7 +441,7 @@ function modelsCard(
     props: {
       style,
       children: [
-        sectionLabel('models', opts.large),
+        sectionLabel(s.models, opts.large),
         {
           type: 'div',
           props: {
@@ -435,6 +456,7 @@ function modelsCard(
 
 function toolsCard(
   tools: Array<{ name: string; count: number }>,
+  s: ReturnType<typeof t>,
   opts: { large?: boolean } = {}
 ): Node {
   const max = tools[0]?.count ?? 1;
@@ -450,13 +472,13 @@ function toolsCard(
     props: {
       style,
       children: [
-        sectionLabel('top tools', opts.large),
+        sectionLabel(s.topTools, opts.large),
         {
           type: 'div',
           props: {
             style: { display: 'flex', flexDirection: 'column', gap: opts.large ? 14 : 6 },
-            children: tools.map((t) =>
-              progressRow(t.name, (t.count / max) * 100, String(t.count), opts.large)
+            children: tools.map((tool) =>
+              progressRow(tool.name, (tool.count / max) * 100, String(tool.count), opts.large)
             ),
           },
         },
@@ -473,13 +495,7 @@ function progressRow(label: string, pct: number, right: string, large?: boolean)
     props: {
       style: { display: 'flex', alignItems: 'center', gap: 12 },
       children: [
-        {
-          type: 'div',
-          props: {
-            style: { fontSize, color: '#ccc', width: large ? 220 : 110 },
-            children: label,
-          },
-        },
+        { type: 'div', props: { style: { fontSize, color: '#ccc', width: large ? 220 : 110 }, children: label } },
         {
           type: 'div',
           props: {
@@ -521,28 +537,18 @@ function sectionLabel(text: string, large?: boolean): Node {
   return {
     type: 'div',
     props: {
-      style: {
-        fontSize: large ? 18 : 12,
-        color: '#888',
-        textTransform: 'uppercase',
-        letterSpacing: 2,
-      },
+      style: { fontSize: large ? 18 : 12, color: '#888', letterSpacing: 2 },
       children: text,
     },
   };
 }
 
-function footer(large?: boolean): Node {
+function footer(text: string, large?: boolean): Node {
   return {
     type: 'div',
     props: {
-      style: {
-        fontSize: large ? 18 : 13,
-        color: '#555',
-        display: 'flex',
-        justifyContent: 'center',
-      },
-      children: 'ccwrapped · generated locally, code never uploaded',
+      style: { fontSize: large ? 18 : 13, color: '#555', display: 'flex', justifyContent: 'center' },
+      children: text,
     },
   };
 }
@@ -564,9 +570,4 @@ function shortModel(model: string): string {
   if (model.includes('sonnet')) return match('Sonnet', /sonnet-(\d+(?:-\d+)?)/);
   if (model.includes('haiku')) return match('Haiku', /haiku-(\d+(?:-\d+)?)/);
   return model;
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }

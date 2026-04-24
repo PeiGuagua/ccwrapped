@@ -4,6 +4,8 @@
 
 **Your daily Claude Code report. Like Spotify Wrapped, for your AI coding habits.**
 
+[English](README.md) · [中文](README.zh.md)
+
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![macOS](https://img.shields.io/badge/macOS-supported-black)
@@ -43,6 +45,7 @@ ccwrapped is different: it treats your Claude Code log like Spotify treats your 
 | Shareable PNG         |         |               |              |              |    **✅**     |
 | HTML email delivery   |         |               |              |              |    **✅**     |
 | Scheduled auto-run    |         |               |              |              |    **✅**     |
+| English + 中文         |         |               |              |              |    **✅**     |
 
 ---
 
@@ -56,9 +59,7 @@ ccwrapped is different: it treats your Claude Code log like Spotify treats your 
 
 <img src="docs/sample-vertical.png" width="320" alt="vertical">
 
-**HTML email** in your inbox:
-
-> ![email](docs/sample-horizontal.png) *(same visual, rendered as live HTML so colors adapt to your mail client)*
+**HTML email** in your inbox, live-rendered by your mail client (colors adapt to light/dark mode).
 
 ---
 
@@ -91,10 +92,11 @@ ccwrapped
 
 ## Configure (3 minutes)
 
-Create `~/.ccwrapped/config.json`. Both sections below are optional — you only need what you want.
+Create `~/.ccwrapped/config.json`. All sections are optional — you only need what you want.
 
 ```json
 {
+  "language": "en",
   "ai": {
     "base_url": "https://api.moonshot.cn/v1",
     "api_key": "sk-your-key",
@@ -108,6 +110,10 @@ Create `~/.ccwrapped/config.json`. Both sections below are optional — you only
 }
 ```
 
+### Language
+
+Set `"language": "en"` or `"language": "zh"`. If omitted, ccwrapped auto-detects from your OS locale (`LANG`). You can also override per-run via `--lang en` or `--lang zh`.
+
 ### AI provider options
 
 Any OpenAI-compatible endpoint works:
@@ -119,7 +125,7 @@ Any OpenAI-compatible endpoint works:
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | OpenRouter | `https://openrouter.ai/api/v1` | any routed model |
 
-Skip this block entirely and the Story section uses a local template (no network call).
+Skip this block and the Story section uses a local template (no network call).
 
 ### Email
 
@@ -140,6 +146,7 @@ ccwrapped --date 2026-04-01  # any date
 ccwrapped --no-ai            # skip AI call, use template
 ccwrapped --share            # also save two PNGs to ~/Desktop
 ccwrapped --email            # also send the HTML email
+ccwrapped --lang zh          # Chinese output
 ccwrapped --json             # raw stats as JSON
 ```
 
@@ -192,9 +199,9 @@ Your actual file contents, code, conversation text, prompts, and command argumen
 
 ## Privacy
 
-- `~/.ccwrapped/config.json` stores API keys. On first write, it's `chmod 600` (owner-read-only).
+- `~/.ccwrapped/config.json` stores API keys. Permissions can be tightened via `chmod 600 ~/.ccwrapped/config.json`.
 - No telemetry. No analytics. No phone-home. Ever.
-- Font files bundled in `templates/` are [Inter](https://rsms.me/inter/) (SIL Open Font License).
+- Font files bundled in `templates/` are [Inter](https://rsms.me/inter/) (SIL Open Font License). Chinese CJK font (Noto Sans SC) is downloaded on first `--share` use if `language: "zh"` and cached to `~/.ccwrapped/fonts/`.
 
 ---
 
@@ -222,6 +229,18 @@ Built on top of wonderful OSS:
 - [resend](https://resend.com) — email delivery
 - [commander](https://github.com/tj/commander.js) — CLI framework
 - [kleur](https://github.com/lukeed/kleur) — terminal colors
+
+---
+
+## Author & contact
+
+Built by **guagua** ([@PeiGuagua](https://github.com/PeiGuagua)), an indie developer working on overseas AI tools.
+
+- **X / Twitter**: [@If1FVMlBbbqiCzF](https://x.com/If1FVMlBbbqiCzF)
+- **WeChat**: `tuzi980116`
+- Other projects: [ThumbAI](https://thumbai.app) · more coming
+
+If ccwrapped is useful to you, a ⭐ on this repo means a lot.
 
 ---
 
